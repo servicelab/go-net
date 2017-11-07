@@ -10,9 +10,6 @@ import (
 	"golang.org/x/net/internal/socket"
 )
 
-// BUG(mikio): On Windows, the ControlMessage for ReadFrom and WriteTo
-// methods of PacketConn is not implemented.
-
 // A payloadHandler represents the IPv6 datagram payload handler.
 type payloadHandler struct {
 	net.PacketConn
