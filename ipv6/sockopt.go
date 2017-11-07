@@ -15,7 +15,7 @@ const (
 	ssoMulticastLoopback          // loopback for multicast packet, RFC 3493
 	ssoReceiveTrafficClass        // header field on received packet, RFC 3542
 	ssoReceiveHopLimit            // header field on received packet, RFC 2292 or 3542
-	ssoReceivePacketInfo          // incbound or outbound packet path, RFC 2292 or 3542
+	ssoReceivePacketInfo          // inbound or outbound packet path, RFC 2292 or 3542
 	ssoReceivePathMTU             // path mtu, RFC 3542
 	ssoPathMTU                    // path mtu, RFC 3542
 	ssoChecksum                   // packet checksum, RFC 2292 or 3542
