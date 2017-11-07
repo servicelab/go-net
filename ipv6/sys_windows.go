@@ -7,6 +7,7 @@ package ipv6
 import (
 	"net"
 	"syscall"
+	"unsafe"
 
 	"golang.org/x/net/internal/iana"
 	"golang.org/x/net/internal/socket"
@@ -16,6 +17,7 @@ import (
 
 const (
 	sizeofSockaddrInet6 = 0x1c
+	sizeofInet6Pktinfo  = 0x14
 
 	sizeofIPv6Mreq     = 0x14
 	sizeofIPv6Mtuinfo  = 0x20
@@ -28,6 +30,11 @@ type sockaddrInet6 struct {
 	Flowinfo uint32
 	Addr     [16]byte /* in6_addr */
 	Scope_id uint32
+}
+
+type inet6Pktinfo struct {
+	Addr    [16]byte /* in6_addr */
+	Ifindex int32
 }
 
 type ipv6Mreq struct {
@@ -45,7 +52,9 @@ type icmpv6Filter struct {
 }
 
 var (
-	ctlOpts = [ctlMax]ctlOpt{}
+	ctlOpts = [ctlMax]ctlOpt{
+		ctlPacketInfo: {windows.IPV6_PKTINFO, sizeofInet6Pktinfo, marshalPacketInfo, parsePacketInfo},
+	}
 
 	sockOpts = map[int]*sockOpt{
 		ssoHopLimit:           {Option: socket.Option{Level: iana.ProtocolIPv6, Name: windows.IPV6_UNICAST_HOPS, Len: 4}},
@@ -54,6 +63,7 @@ var (
 		ssoMulticastLoopback:  {Option: socket.Option{Level: iana.ProtocolIPv6, Name: windows.IPV6_MULTICAST_LOOP, Len: 4}},
 		ssoJoinGroup:          {Option: socket.Option{Level: iana.ProtocolIPv6, Name: windows.IPV6_JOIN_GROUP, Len: sizeofIPv6Mreq}, typ: ssoTypeIPMreq},
 		ssoLeaveGroup:         {Option: socket.Option{Level: iana.ProtocolIPv6, Name: windows.IPV6_LEAVE_GROUP, Len: sizeofIPv6Mreq}, typ: ssoTypeIPMreq},
+		ssoReceivePacketInfo:  {Option: socket.Option{Level: iana.ProtocolIPv6, Name: windows.IPV6_PKTINFO, Len: 4}},
 	}
 )
 
@@ -63,6 +73,34 @@ func (sa *sockaddrInet6) setSockaddr(ip net.IP, i int) {
 	sa.Scope_id = uint32(i)
 }
 
+func (pi *inet6Pktinfo) setIfindex(i int) {
+	pi.Ifindex = int32(i)
+}
+
 func (mreq *ipv6Mreq) setIfindex(i int) {
 	mreq.Interface = uint32(i)
+}
+
+func marshalPacketInfo(b []byte, cm *ControlMessage) []byte {
+	m := socket.ControlMessage(b)
+	m.MarshalHeader(iana.ProtocolIPv6, windows.IPV6_PKTINFO, sizeofInet6Pktinfo)
+	if cm != nil {
+		pi := (*inet6Pktinfo)(unsafe.Pointer(&m.Data(sizeofInet6Pktinfo)[0]))
+		if ip := cm.Src.To16(); ip != nil {
+			copy(pi.Addr[:], ip)
+		}
+		if cm.IfIndex > 0 {
+			pi.setIfindex(cm.IfIndex)
+		}
+	}
+	return m.Next(sizeofInet6Pktinfo)
+}
+
+func parsePacketInfo(cm *ControlMessage, b []byte) {
+	pi := (*inet6Pktinfo)(unsafe.Pointer(&b[0]))
+	cm.IfIndex = int(pi.Ifindex)
+	if len(cm.Dst) < net.IPv6len {
+		cm.Dst = make(net.IP, net.IPv6len)
+	}
+	copy(cm.Dst, pi.Addr[:])
 }

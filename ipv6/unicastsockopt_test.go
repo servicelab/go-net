@@ -16,7 +16,7 @@ import (
 
 func TestConnUnicastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "windows":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if _, err := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback); err != nil {
@@ -61,7 +61,7 @@ var packetConnUnicastSocketOptionTests = []struct {
 
 func TestPacketConnUnicastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "windows":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if _, err := nettest.RoutedInterface("ip6", net.FlagUp|net.FlagLoopback); err != nil {
@@ -96,6 +96,11 @@ func testUnicastSocketOptions(t *testing.T, c testIPv6UnicastConn) {
 
 	tclass := iana.DiffServCS0 | iana.NotECNTransport
 	if err := c.SetTrafficClass(tclass); err != nil {
+		switch runtime.GOOS {
+		case "windows":
+			// no IPV6_TCLASS on Windows, must use qWAVE
+			t.Skipf("not supported on %s", runtime.GOOS)
+		}
 		t.Fatal(err)
 	}
 	if v, err := c.TrafficClass(); err != nil {
