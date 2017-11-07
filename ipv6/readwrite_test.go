@@ -65,7 +65,7 @@ func BenchmarkReadWriteUnicast(b *testing.B) {
 
 func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 	switch runtime.GOOS {
-	case "nacl", "plan9", "windows":
+	case "nacl", "plan9":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if !supportsIPv6 {

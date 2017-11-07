@@ -16,7 +16,7 @@ import (
 
 func TestConnUnicastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
-	case "nacl", "plan9", "windows":
+	case "nacl", "plan9":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if !supportsIPv6 {
@@ -61,7 +61,7 @@ var packetConnUnicastSocketOptionTests = []struct {
 
 func TestPacketConnUnicastSocketOptions(t *testing.T) {
 	switch runtime.GOOS {
-	case "nacl", "plan9", "windows":
+	case "nacl", "plan9":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if !supportsIPv6 {
@@ -95,6 +95,9 @@ func testUnicastSocketOptions(t *testing.T, c testIPv6UnicastConn) {
 	tclass := iana.DiffServCS0 | iana.NotECNTransport
 	if err := c.SetTrafficClass(tclass); err != nil {
 		switch runtime.GOOS {
+		case "windows":
+			// no IPV6_TCLASS on Windows, must use qWAVE
+			t.Skipf("not supported on %s", runtime.GOOS)
 		case "darwin": // older darwin kernels don't support IPV6_TCLASS option
 			t.Logf("not supported on %s", runtime.GOOS)
 			goto next
