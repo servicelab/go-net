@@ -5,6 +5,9 @@
 package ipv4
 
 import (
+	"net"
+	"unsafe"
+
 	"golang.org/x/net/internal/iana"
 	"golang.org/x/net/internal/socket"
 
@@ -14,6 +17,7 @@ import (
 const (
 	sizeofIPMreq       = 0x8
 	sizeofIPMreqSource = 0xc
+	sizeofInetPktinfo  = 0xc
 )
 
 type ipMreq struct {
@@ -27,9 +31,16 @@ type ipMreqSource struct {
 	Interface  [4]byte
 }
 
+type inetPktinfo struct {
+	Addr    [4]byte
+	Ifindex uint32
+}
+
 // See http://msdn.microsoft.com/en-us/library/windows/desktop/ms738586(v=vs.85).aspx
 var (
-	ctlOpts = [ctlMax]ctlOpt{}
+	ctlOpts = [ctlMax]ctlOpt{
+		ctlPacketInfo: {windows.IP_PKTINFO, sizeofInetPktinfo, marshalPacketInfo, parsePacketInfo},
+	}
 
 	sockOpts = map[int]*sockOpt{
 		ssoTOS:                {Option: socket.Option{Level: iana.ProtocolIP, Name: windows.IP_TOS, Len: 4}},
@@ -40,5 +51,34 @@ var (
 		ssoHeaderPrepend:      {Option: socket.Option{Level: iana.ProtocolIP, Name: windows.IP_HDRINCL, Len: 4}},
 		ssoJoinGroup:          {Option: socket.Option{Level: iana.ProtocolIP, Name: windows.IP_ADD_MEMBERSHIP, Len: sizeofIPMreq}, typ: ssoTypeIPMreq},
 		ssoLeaveGroup:         {Option: socket.Option{Level: iana.ProtocolIP, Name: windows.IP_DROP_MEMBERSHIP, Len: sizeofIPMreq}, typ: ssoTypeIPMreq},
+		ssoPacketInfo:         {Option: socket.Option{Level: iana.ProtocolIP, Name: windows.IP_PKTINFO, Len: 4}},
 	}
 )
+
+func (pi *inetPktinfo) setIfindex(i int) {
+	pi.Ifindex = uint32(i)
+}
+
+func marshalPacketInfo(b []byte, cm *ControlMessage) []byte {
+	m := socket.ControlMessage(b)
+	m.MarshalHeader(iana.ProtocolIP, windows.IP_PKTINFO, sizeofInetPktinfo)
+	if cm != nil {
+		pi := (*inetPktinfo)(unsafe.Pointer(&m.Data(sizeofInetPktinfo)[0]))
+		if ip := cm.Src.To4(); ip != nil {
+			copy(pi.Addr[:], ip)
+		}
+		if cm.IfIndex > 0 {
+			pi.setIfindex(cm.IfIndex)
+		}
+	}
+	return m.Next(sizeofInetPktinfo)
+}
+
+func parsePacketInfo(cm *ControlMessage, b []byte) {
+	pi := (*inetPktinfo)(unsafe.Pointer(&b[0]))
+	cm.IfIndex = int(pi.Ifindex)
+	if len(cm.Dst) < net.IPv4len {
+		cm.Dst = make(net.IP, net.IPv4len)
+	}
+	copy(cm.Dst, pi.Addr[:])
+}

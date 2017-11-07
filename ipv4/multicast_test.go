@@ -29,7 +29,7 @@ var packetConnReadWriteMulticastUDPTests = []struct {
 
 func TestPacketConnReadWriteMulticastUDP(t *testing.T) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "illumos", "js", "nacl", "plan9", "solaris", "wasip1", "windows", "zos":
+	case "fuchsia", "hurd", "illumos", "js", "nacl", "plan9", "solaris", "wasip1", "zos":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	ifi, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
@@ -129,6 +129,10 @@ var packetConnReadWriteMulticastICMPTests = []struct {
 func TestPacketConnReadWriteMulticastICMP(t *testing.T) {
 	if !nettest.SupportsRawSocket() {
 		t.Skipf("not supported on %s/%s", runtime.GOOS, runtime.GOARCH)
+	}
+	switch runtime.GOOS {
+	case "windows":
+		t.Skipf("test hangs on windows when run as Administrator")
 	}
 	ifi, err := nettest.RoutedInterface("ip4", net.FlagUp|net.FlagMulticast|net.FlagLoopback)
 	// Unable to obtain loopback interface on z/OS, so instead we test on any multicast
@@ -250,6 +254,11 @@ var rawConnReadWriteMulticastICMPTests = []struct {
 }
 
 func TestRawConnReadWriteMulticastICMP(t *testing.T) {
+	switch runtime.GOOS {
+	case "windows":
+		t.Skipf("test hangs on windows when run as Administrator")
+	}
+
 	if testing.Short() {
 		t.Skip("to avoid external network")
 	}

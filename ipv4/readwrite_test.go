@@ -220,7 +220,7 @@ func BenchmarkPacketConnReadWriteUnicast(b *testing.B) {
 
 func TestPacketConnConcurrentReadWriteUnicastUDP(t *testing.T) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "windows":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 

@@ -21,7 +21,7 @@ var udpMultipleGroupListenerTests = []net.Addr{
 
 func TestUDPSinglePacketConnWithMultipleGroupListeners(t *testing.T) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "windows", "zos":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "zos":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if testing.Short() {
@@ -61,7 +61,7 @@ func TestUDPSinglePacketConnWithMultipleGroupListeners(t *testing.T) {
 
 func TestUDPMultiplePacketConnWithMultipleGroupListeners(t *testing.T) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "windows", "zos":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "zos":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if testing.Short() {
@@ -116,7 +116,7 @@ func TestUDPMultiplePacketConnWithMultipleGroupListeners(t *testing.T) {
 
 func TestUDPPerInterfaceSinglePacketConnWithSingleGroupListener(t *testing.T) {
 	switch runtime.GOOS {
-	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "windows", "zos":
+	case "fuchsia", "hurd", "js", "nacl", "plan9", "wasip1", "zos":
 		t.Skipf("not supported on %s", runtime.GOOS)
 	}
 	if testing.Short() {
