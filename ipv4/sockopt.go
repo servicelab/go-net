@@ -16,7 +16,7 @@ const (
 	ssoReceiveTTL                // header field on received packet
 	ssoReceiveDst                // header field on received packet
 	ssoReceiveInterface          // inbound interface on received packet
-	ssoPacketInfo                // incbound or outbound packet path
+	ssoPacketInfo                // inbound or outbound packet path
 	ssoHeaderPrepend             // ipv4 header prepend
 	ssoStripHeader               // strip ipv4 header
 	ssoICMPFilter                // icmp filter

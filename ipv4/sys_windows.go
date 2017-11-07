@@ -5,6 +5,9 @@
 package ipv4
 
 import (
+	"net"
+	"unsafe"
+
 	"golang.org/x/net/internal/iana"
 	"golang.org/x/net/internal/socket"
 )
@@ -48,7 +51,9 @@ type ipMreqSource struct {
 
 // See http://msdn.microsoft.com/en-us/library/windows/desktop/ms738586(v=vs.85).aspx
 var (
-	ctlOpts = [ctlMax]ctlOpt{}
+	ctlOpts = [ctlMax]ctlOpt{
+		ctlPacketInfo: {sysIP_PKTINFO, sizeofInetPktinfo, marshalPacketInfo, parsePacketInfo},
+	}
 
 	sockOpts = map[int]*sockOpt{
 		ssoTOS:                {Option: socket.Option{Level: iana.ProtocolIP, Name: sysIP_TOS, Len: 4}},
@@ -59,9 +64,34 @@ var (
 		ssoHeaderPrepend:      {Option: socket.Option{Level: iana.ProtocolIP, Name: sysIP_HDRINCL, Len: 4}},
 		ssoJoinGroup:          {Option: socket.Option{Level: iana.ProtocolIP, Name: sysIP_ADD_MEMBERSHIP, Len: sizeofIPMreq}, typ: ssoTypeIPMreq},
 		ssoLeaveGroup:         {Option: socket.Option{Level: iana.ProtocolIP, Name: sysIP_DROP_MEMBERSHIP, Len: sizeofIPMreq}, typ: ssoTypeIPMreq},
+		ssoPacketInfo:         {Option: socket.Option{Level: iana.ProtocolIP, Name: sysIP_PKTINFO, Len: 4}},
 	}
 )
 
 func (pi *inetPktinfo) setIfindex(i int) {
 	pi.Ifindex = int32(i)
+}
+
+func marshalPacketInfo(b []byte, cm *ControlMessage) []byte {
+	m := socket.ControlMessage(b)
+	m.MarshalHeader(iana.ProtocolIP, sysIP_PKTINFO, sizeofInetPktinfo)
+	if cm != nil {
+		pi := (*inetPktinfo)(unsafe.Pointer(&m.Data(sizeofInetPktinfo)[0]))
+		if ip := cm.Src.To4(); ip != nil {
+			copy(pi.Addr[:], ip)
+		}
+		if cm.IfIndex > 0 {
+			pi.setIfindex(cm.IfIndex)
+		}
+	}
+	return m.Next(sizeofInetPktinfo)
+}
+
+func parsePacketInfo(cm *ControlMessage, b []byte) {
+	pi := (*inetPktinfo)(unsafe.Pointer(&b[0]))
+	cm.IfIndex = int(pi.Ifindex)
+	if len(cm.Dst) < net.IPv4len {
+		cm.Dst = make(net.IP, net.IPv4len)
+	}
+	copy(cm.Dst, pi.Addr[:])
 }
