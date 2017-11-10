@@ -54,11 +54,27 @@ func setsockopt(s uintptr, level, name int, b []byte) error {
 }
 
 func recvmsg(s uintptr, h *msghdr, flags int) (int, error) {
-	return 0, errors.New("not implemented")
+	var bytesReceived uint32
+	msg := (*WSAMsg)(h)
+	msg.Flags = uint32(flags)
+	controlLen := msg.Control.Len
+	err := WSARecvMsg(syscall.Handle(s), msg, &bytesReceived, nil, nil)
+	if err == WSAEMSGSIZE && (msg.Flags&MSG_CTRUNC) != 0 {
+		// On windows, EMSGSIZE is raised in addition to MSG_CTRUNC, and
+		// the original untruncated length of the control data is returned.
+		// We reset the length back to the truncated portion which was received,
+		// so the caller doesn't try to go out of bounds.
+		// We also ignore the EMSGSIZE to emulate behavior of other platforms.
+		msg.Control.Len = controlLen
+		err = nil
+	}
+	return int(bytesReceived), err
 }
 
 func sendmsg(s uintptr, h *msghdr, flags int) (int, error) {
-	return 0, errors.New("not implemented")
+	var bytesSent uint32
+	err := WSASendMsg(syscall.Handle(s), (*WSAMsg)(h), uint32(flags), &bytesSent, nil, nil)
+	return int(bytesSent), err
 }
 
 func recvmmsg(s uintptr, hs []mmsghdr, flags int) (int, error) {
