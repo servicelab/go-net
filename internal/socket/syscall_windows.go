@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !aix && !darwin && !dragonfly && !freebsd && !linux && !netbsd && !openbsd && !solaris && !zos && !windows
-
 package socket
 
-type iovec struct{}
+import "syscall"
 
-func (v *iovec) set(b []byte) {}
+const (
+	WSAEMSGSIZE syscall.Errno = 10040
+)
