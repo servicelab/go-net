@@ -22,3 +22,26 @@ func (so *sockOpt) setIPMreq(c *socket.Conn, ifi *net.Interface, grp net.IP) err
 	b := (*[sizeofIPv6Mreq]byte)(unsafe.Pointer(&mreq))[:sizeofIPv6Mreq]
 	return so.Set(c, b)
 }
+
+func netInterfaceToIP16(ifi *net.Interface) (net.IP, error) {
+	if ifi == nil {
+		return net.IPv6zero.To16(), nil
+	}
+	ifat, err := ifi.Addrs()
+	if err != nil {
+		return nil, err
+	}
+	for _, ifa := range ifat {
+		switch ifa := ifa.(type) {
+		case *net.IPAddr:
+			if ip := ifa.IP.To16(); ip != nil {
+				return ip, nil
+			}
+		case *net.IPNet:
+			if ip := ifa.IP.To16(); ip != nil {
+				return ip, nil
+			}
+		}
+	}
+	return nil, errNoSuchInterface
+}
