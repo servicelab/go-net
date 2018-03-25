@@ -86,11 +86,15 @@ func marshalPacketInfo(b []byte, cm *ControlMessage) []byte {
 	m.MarshalHeader(iana.ProtocolIPv6, windows.IPV6_PKTINFO, sizeofInet6Pktinfo)
 	if cm != nil {
 		pi := (*inet6Pktinfo)(unsafe.Pointer(&m.Data(sizeofInet6Pktinfo)[0]))
-		if ip := cm.Src.To16(); ip != nil {
-			copy(pi.Addr[:], ip)
-		}
 		if cm.IfIndex > 0 {
 			pi.setIfindex(cm.IfIndex)
+		}
+		if cm.IfIndex > 0 && cm.Src.To16() == nil {
+			intf, _ := net.InterfaceByIndex(cm.IfIndex)
+			ip, _ := netInterfaceToIP16(intf)
+			copy(pi.Addr[:], ip)
+		} else if ip := cm.Src.To16(); ip != nil {
+			copy(pi.Addr[:], ip)
 		}
 	}
 	return m.Next(sizeofInet6Pktinfo)

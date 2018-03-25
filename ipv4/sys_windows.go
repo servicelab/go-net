@@ -64,11 +64,15 @@ func marshalPacketInfo(b []byte, cm *ControlMessage) []byte {
 	m.MarshalHeader(iana.ProtocolIP, windows.IP_PKTINFO, sizeofInetPktinfo)
 	if cm != nil {
 		pi := (*inetPktinfo)(unsafe.Pointer(&m.Data(sizeofInetPktinfo)[0]))
-		if ip := cm.Src.To4(); ip != nil {
-			copy(pi.Addr[:], ip)
-		}
 		if cm.IfIndex > 0 {
 			pi.setIfindex(cm.IfIndex)
+		}
+		if cm.IfIndex > 0 && cm.Src.To4() == nil {
+			intf, _ := net.InterfaceByIndex(cm.IfIndex)
+			ip, _ := netInterfaceToIP4(intf)
+			copy(pi.Addr[:], ip)
+		} else if ip := cm.Src.To4(); ip != nil {
+			copy(pi.Addr[:], ip)
 		}
 	}
 	return m.Next(sizeofInetPktinfo)
