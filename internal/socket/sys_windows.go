@@ -40,6 +40,7 @@ func setsockopt(s uintptr, level, name int, b []byte) error {
 }
 
 func recvmsg(s uintptr, buffers [][]byte, oob []byte, flags int, network string) (n, oobn int, recvflags int, from net.Addr, err error) {
+	var bytesReceived uint32
 	var msg windows.WSAMsg
 	if len(buffers) > 0 {
 		vs := make([]iovec, len(buffers))
@@ -59,7 +60,11 @@ func recvmsg(s uintptr, buffers [][]byte, oob []byte, flags int, network string)
 	msg.Namelen = int32(unsafe.Sizeof(rsa))
 	msg.Flags = uint32(flags)
 
-	var bytesReceived uint32
+	err = syscall.SetsockoptInt(syscall.Handle(s), syscall.SOL_SOCKET, windows.SO_RCVTIMEO, 500)
+	if err != nil {
+		return
+	}
+
 	err = windows.WSARecvMsg(windows.Handle(s), &msg, &bytesReceived, nil, nil)
 	if err == WSAEMSGSIZE && (msg.Flags&windows.MSG_CTRUNC) != 0 {
 		// On windows, EMSGSIZE is raised in addition to MSG_CTRUNC, and
@@ -69,6 +74,9 @@ func recvmsg(s uintptr, buffers [][]byte, oob []byte, flags int, network string)
 		// We also ignore the EMSGSIZE to emulate behavior of other platforms.
 		msg.Control.Len = uint32(len(oob))
 		err = nil
+	}
+	if err == windows.WSAETIMEDOUT {
+		err = syscall.EAGAIN
 	}
 
 	n = int(bytesReceived)
