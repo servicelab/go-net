@@ -58,7 +58,11 @@ func recvmsg(s uintptr, h *msghdr, flags int) (int, error) {
 	msg := (*WSAMsg)(h)
 	msg.Flags = uint32(flags)
 	controlLen := msg.Control.Len
-	err := WSARecvMsg(syscall.Handle(s), msg, &bytesReceived, nil, nil)
+	err := syscall.SetsockoptInt(syscall.Handle(s), syscall.SOL_SOCKET, SO_RCVTIMEO, 500)
+	if err != nil {
+		return 0, err
+	}
+	err = WSARecvMsg(syscall.Handle(s), msg, &bytesReceived, nil, nil)
 	if err == WSAEMSGSIZE && (msg.Flags&MSG_CTRUNC) != 0 {
 		// On windows, EMSGSIZE is raised in addition to MSG_CTRUNC, and
 		// the original untruncated length of the control data is returned.
@@ -67,6 +71,9 @@ func recvmsg(s uintptr, h *msghdr, flags int) (int, error) {
 		// We also ignore the EMSGSIZE to emulate behavior of other platforms.
 		msg.Control.Len = controlLen
 		err = nil
+	}
+	if err == WSAETIMEDOUT {
+		err = syscall.EAGAIN
 	}
 	return int(bytesReceived), err
 }

@@ -16,7 +16,10 @@ const (
 	MSG_TRUNC  = 0x0100
 	MSG_CTRUNC = 0x0200
 
-	WSAEMSGSIZE syscall.Errno = 10040
+	SO_RCVTIMEO = 4102
+
+	WSAEMSGSIZE  syscall.Errno = 10040
+	WSAETIMEDOUT syscall.Errno = 10060
 )
 
 type WSAMsg struct {
