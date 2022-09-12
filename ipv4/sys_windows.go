@@ -15,9 +15,15 @@ import (
 )
 
 const (
+	sizeofInetPktinfo  = 0x8
 	sizeofIPMreq       = 0x8
 	sizeofIPMreqSource = 0xc
 )
+
+type inetPktinfo struct {
+	Addr    [4]byte
+	Ifindex int32
+}
 
 type ipMreq struct {
 	Multiaddr [4]byte
@@ -33,7 +39,7 @@ type ipMreqSource struct {
 // See http://msdn.microsoft.com/en-us/library/windows/desktop/ms738586(v=vs.85).aspx
 var (
 	ctlOpts = [ctlMax]ctlOpt{
-		ctlPacketInfo: {sysIP_PKTINFO, sizeofInetPktinfo, marshalPacketInfo, parsePacketInfo},
+		ctlPacketInfo: {windows.IP_PKTINFO, sizeofInetPktinfo, marshalPacketInfo, parsePacketInfo},
 	}
 
 	sockOpts = map[int]*sockOpt{
@@ -55,7 +61,7 @@ func (pi *inetPktinfo) setIfindex(i int) {
 
 func marshalPacketInfo(b []byte, cm *ControlMessage) []byte {
 	m := socket.ControlMessage(b)
-	m.MarshalHeader(iana.ProtocolIP, sysIP_PKTINFO, sizeofInetPktinfo)
+	m.MarshalHeader(iana.ProtocolIP, windows.IP_PKTINFO, sizeofInetPktinfo)
 	if cm != nil {
 		pi := (*inetPktinfo)(unsafe.Pointer(&m.Data(sizeofInetPktinfo)[0]))
 		if cm.IfIndex > 0 {

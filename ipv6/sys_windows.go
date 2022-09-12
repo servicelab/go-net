@@ -53,7 +53,7 @@ type icmpv6Filter struct {
 
 var (
 	ctlOpts = [ctlMax]ctlOpt{
-		ctlPacketInfo: {sysIPV6_PKTINFO, sizeofInet6Pktinfo, marshalPacketInfo, parsePacketInfo},
+		ctlPacketInfo: {windows.IPV6_PKTINFO, sizeofInet6Pktinfo, marshalPacketInfo, parsePacketInfo},
 	}
 
 	sockOpts = map[int]*sockOpt{
@@ -83,7 +83,7 @@ func (mreq *ipv6Mreq) setIfindex(i int) {
 
 func marshalPacketInfo(b []byte, cm *ControlMessage) []byte {
 	m := socket.ControlMessage(b)
-	m.MarshalHeader(iana.ProtocolIPv6, sysIPV6_PKTINFO, sizeofInet6Pktinfo)
+	m.MarshalHeader(iana.ProtocolIPv6, windows.IPV6_PKTINFO, sizeofInet6Pktinfo)
 	if cm != nil {
 		pi := (*inet6Pktinfo)(unsafe.Pointer(&m.Data(sizeofInet6Pktinfo)[0]))
 		if cm.IfIndex > 0 {

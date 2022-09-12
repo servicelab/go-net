@@ -5,8 +5,6 @@
 package ipv4
 
 import (
-	"syscall"
-
 	"golang.org/x/net/internal/socket"
 )
 
