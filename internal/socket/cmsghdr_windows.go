@@ -4,6 +4,26 @@
 
 package socket
 
+const sizeofCmsghdr = 0xc
+
+func roundup(l int) int {
+	var p uintptr
+	kernelAlign := int(unsafe.Sizeof(p))
+	return (l + kernelAlign - 1) &^ (kernelAlign - 1)
+}
+
+func controlHeaderLen() int {
+	return roundup(sizeofCmsghdr)
+}
+
+func controlMessageLen(dataLen int) int {
+	return roundup(sizeofCmsghdr) + dataLen
+}
+
+func controlMessageSpace(dataLen int) int {
+	return roundup(sizeofCmsghdr) + roundup(dataLen)
+}
+
 // WSACMSGHDR
 type cmsghdr struct {
 	Len   uintptr
@@ -11,7 +31,9 @@ type cmsghdr struct {
 	Type  int32
 }
 
-const sizeofCmsghdr = 0xc
+func (h *cmsghdr) len() int { return h.Len }
+func (h *cmsghdr) lvl() int { return h.Level }
+func (h *cmsghdr) typ() int { return h.Type }
 
 func (h *cmsghdr) set(l, lvl, typ int) {
 	h.Len = uintptr(l)
