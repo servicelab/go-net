@@ -100,9 +100,6 @@ func testUnicastSocketOptions(t *testing.T, c testIPv6UnicastConn) {
 		case "windows":
 			// no IPV6_TCLASS on Windows, must use qWAVE
 			t.Skipf("not supported on %s", runtime.GOOS)
-		case "darwin", "ios": // older darwin kernels don't support IPV6_TCLASS option
-			t.Logf("not supported on %s", runtime.GOOS)
-			goto next
 		}
 		t.Fatal(err)
 	}
@@ -112,7 +109,6 @@ func testUnicastSocketOptions(t *testing.T, c testIPv6UnicastConn) {
 		t.Fatalf("got %v; want %v", v, tclass)
 	}
 
-next:
 	hoplim := 255
 	if err := c.SetHopLimit(hoplim); err != nil {
 		t.Fatal(err)
