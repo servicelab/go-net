@@ -4,6 +4,8 @@
 
 package socket
 
+import "unsafe"
+
 const sizeofCmsghdr = 0xc
 
 func roundup(l int) int {
