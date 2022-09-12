@@ -31,10 +31,6 @@ type cmsghdr struct {
 	Type  int32
 }
 
-func (h *cmsghdr) len() int { return h.Len }
-func (h *cmsghdr) lvl() int { return h.Level }
-func (h *cmsghdr) typ() int { return h.Type }
-
 func (h *cmsghdr) set(l, lvl, typ int) {
 	h.Len = uintptr(l)
 	h.Level = int32(lvl)
