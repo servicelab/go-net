@@ -8,11 +8,14 @@
 package ipv6
 
 import (
+	"errors"
 	"net"
 	"unsafe"
 
 	"golang.org/x/net/internal/socket"
 )
+
+var errNoSuchInterface = errors.New("no such interface")
 
 func (so *sockOpt) setIPMreq(c *socket.Conn, ifi *net.Interface, grp net.IP) error {
 	var mreq ipv6Mreq
