@@ -346,6 +346,10 @@ func (st *serverTester) writePreface() {
 
 func (st *serverTester) writeInitialSettings() {
 	if err := st.fr.WriteSettings(); err != nil {
+		if runtime.GOOS == "openbsd" && strings.HasSuffix(err.Error(), "write: broken pipe") {
+			st.t.Logf("Error writing initial SETTINGS frame from client to server: %v", err)
+			st.t.Skipf("Skipping test with known OpenBSD failure mode. (See https://go.dev/issue/52208.)")
+		}
 		st.t.Fatalf("Error writing initial SETTINGS frame from client to server: %v", err)
 	}
 }
@@ -478,31 +482,8 @@ func (st *serverTester) writeDataPadded(streamID uint32, endStream bool, data, p
 	}
 }
 
-func readFrameTimeout(fr *Framer, wait time.Duration) (Frame, error) {
-	ch := make(chan interface{}, 1)
-	go func() {
-		fr, err := fr.ReadFrame()
-		if err != nil {
-			ch <- err
-		} else {
-			ch <- fr
-		}
-	}()
-	t := time.NewTimer(wait)
-	select {
-	case v := <-ch:
-		t.Stop()
-		if fr, ok := v.(Frame); ok {
-			return fr, nil
-		}
-		return nil, v.(error)
-	case <-t.C:
-		return nil, errors.New("timeout waiting for frame")
-	}
-}
-
 func (st *serverTester) readFrame() (Frame, error) {
-	return readFrameTimeout(st.fr, 2*time.Second)
+	return st.fr.ReadFrame()
 }
 
 func (st *serverTester) wantHeaders() *HeadersFrame {
@@ -4236,9 +4217,6 @@ func TestContentEncodingNoSniffing(t *testing.T) {
 		},
 	}
 
-	tr := &Transport{TLSClientConfig: tlsConfigInsecure}
-	defer tr.CloseIdleConnections()
-
 	for _, tt := range resps {
 		t.Run(tt.name, func(t *testing.T) {
 			st := newServerTester(t, func(w http.ResponseWriter, r *http.Request) {
@@ -4249,22 +4227,32 @@ func TestContentEncodingNoSniffing(t *testing.T) {
 			}, optOnlyServer)
 			defer st.Close()
 
+			tr := &Transport{TLSClientConfig: tlsConfigInsecure}
+			defer tr.CloseIdleConnections()
+
 			req, _ := http.NewRequest("GET", st.ts.URL, nil)
 			res, err := tr.RoundTrip(req)
 			if err != nil {
-				t.Fatalf("Failed to fetch URL: %v", err)
+				t.Fatalf("GET %s: %v", st.ts.URL, err)
 			}
 			defer res.Body.Close()
-			if g, w := res.Header.Get("Content-Encoding"), tt.contentEncoding; g != w {
+
+			g := res.Header.Get("Content-Encoding")
+			t.Logf("%s: Content-Encoding: %s", st.ts.URL, g)
+
+			if w := tt.contentEncoding; g != w {
 				if w != nil { // The case where contentEncoding was set explicitly.
 					t.Errorf("Content-Encoding mismatch\n\tgot:  %q\n\twant: %q", g, w)
 				} else if g != "" { // "" should be the equivalent when the contentEncoding is unset.
 					t.Errorf("Unexpected Content-Encoding %q", g)
 				}
 			}
-			if g, w := res.Header.Get("Content-Type"), tt.wantContentType; g != w {
+
+			g = res.Header.Get("Content-Type")
+			if w := tt.wantContentType; g != w {
 				t.Errorf("Content-Type mismatch\n\tgot:  %q\n\twant: %q", g, w)
 			}
+			t.Logf("%s: Content-Type: %s", st.ts.URL, g)
 		})
 	}
 }
@@ -4367,6 +4355,96 @@ func TestNoErrorLoggedOnPostAfterGOAWAY(t *testing.T) {
 	if bytes.Contains(st.serverLogBuf.Bytes(), []byte("PROTOCOL_ERROR")) {
 		t.Error("got protocol error")
 	}
+}
+
+func TestServerSendsProcessing(t *testing.T) {
+	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
+		w.WriteHeader(http.StatusProcessing)
+		w.Write([]byte("stuff"))
+
+		return nil
+	}, func(st *serverTester) {
+		getSlash(st)
+		hf := st.wantHeaders()
+		goth := st.decodeHeader(hf.HeaderBlockFragment())
+		wanth := [][2]string{
+			{":status", "102"},
+		}
+
+		if !reflect.DeepEqual(goth, wanth) {
+			t.Errorf("Got = %q; want %q", goth, wanth)
+		}
+
+		hf = st.wantHeaders()
+		goth = st.decodeHeader(hf.HeaderBlockFragment())
+		wanth = [][2]string{
+			{":status", "200"},
+			{"content-type", "text/plain; charset=utf-8"},
+			{"content-length", "5"},
+		}
+
+		if !reflect.DeepEqual(goth, wanth) {
+			t.Errorf("Got = %q; want %q", goth, wanth)
+		}
+	})
+}
+
+func TestServerSendsEarlyHints(t *testing.T) {
+	testServerResponse(t, func(w http.ResponseWriter, r *http.Request) error {
+		h := w.Header()
+		h.Add("Content-Length", "123")
+		h.Add("Link", "</style.css>; rel=preload; as=style")
+		h.Add("Link", "</script.js>; rel=preload; as=script")
+		w.WriteHeader(http.StatusEarlyHints)
+
+		h.Add("Link", "</foo.js>; rel=preload; as=script")
+		w.WriteHeader(http.StatusEarlyHints)
+
+		w.Write([]byte("stuff"))
+
+		return nil
+	}, func(st *serverTester) {
+		getSlash(st)
+		hf := st.wantHeaders()
+		goth := st.decodeHeader(hf.HeaderBlockFragment())
+		wanth := [][2]string{
+			{":status", "103"},
+			{"link", "</style.css>; rel=preload; as=style"},
+			{"link", "</script.js>; rel=preload; as=script"},
+		}
+
+		if !reflect.DeepEqual(goth, wanth) {
+			t.Errorf("Got = %q; want %q", goth, wanth)
+		}
+
+		hf = st.wantHeaders()
+		goth = st.decodeHeader(hf.HeaderBlockFragment())
+		wanth = [][2]string{
+			{":status", "103"},
+			{"link", "</style.css>; rel=preload; as=style"},
+			{"link", "</script.js>; rel=preload; as=script"},
+			{"link", "</foo.js>; rel=preload; as=script"},
+		}
+
+		if !reflect.DeepEqual(goth, wanth) {
+			t.Errorf("Got = %q; want %q", goth, wanth)
+		}
+
+		hf = st.wantHeaders()
+		goth = st.decodeHeader(hf.HeaderBlockFragment())
+		wanth = [][2]string{
+			{":status", "200"},
+			{"link", "</style.css>; rel=preload; as=style"},
+			{"link", "</script.js>; rel=preload; as=script"},
+			{"link", "</foo.js>; rel=preload; as=script"},
+			{"content-type", "text/plain; charset=utf-8"},
+			{"content-length", "123"},
+		}
+
+		if !reflect.DeepEqual(goth, wanth) {
+			t.Errorf("Got = %q; want %q", goth, wanth)
+		}
+	})
 }
 
 func TestProtocolErrorAfterGoAway(t *testing.T) {
