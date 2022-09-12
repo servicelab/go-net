@@ -100,7 +100,7 @@ func testUnicastSocketOptions(t *testing.T, c testIPv6UnicastConn) {
 		case "windows":
 			// no IPV6_TCLASS on Windows, must use qWAVE
 			t.Skipf("not supported on %s", runtime.GOOS)
-		case "darwin": // older darwin kernels don't support IPV6_TCLASS option
+		case "darwin", "ios": // older darwin kernels don't support IPV6_TCLASS option
 			t.Logf("not supported on %s", runtime.GOOS)
 			goto next
 		}

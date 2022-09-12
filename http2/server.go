@@ -265,15 +265,11 @@ func ConfigureServer(s *http.Server, conf *Server) error {
 
 	s.TLSConfig.PreferServerCipherSuites = true
 
-	haveNPN := false
-	for _, p := range s.TLSConfig.NextProtos {
-		if p == NextProtoTLS {
-			haveNPN = true
-			break
-		}
-	}
-	if !haveNPN {
+	if !strSliceContains(s.TLSConfig.NextProtos, NextProtoTLS) {
 		s.TLSConfig.NextProtos = append(s.TLSConfig.NextProtos, NextProtoTLS)
+	}
+	if !strSliceContains(s.TLSConfig.NextProtos, "http/1.1") {
+		s.TLSConfig.NextProtos = append(s.TLSConfig.NextProtos, "http/1.1")
 	}
 
 	if s.TLSNextProto == nil {
@@ -720,7 +716,15 @@ func (sc *serverConn) canonicalHeader(v string) string {
 		sc.canonHeader = make(map[string]string)
 	}
 	cv = http.CanonicalHeaderKey(v)
-	sc.canonHeader[v] = cv
+	// maxCachedCanonicalHeaders is an arbitrarily-chosen limit on the number of
+	// entries in the canonHeader cache. This should be larger than the number
+	// of unique, uncommon header keys likely to be sent by the peer, while not
+	// so high as to permit unreaasonable memory usage if the peer sends an unbounded
+	// number of unique header keys.
+	const maxCachedCanonicalHeaders = 32
+	if len(sc.canonHeader) < maxCachedCanonicalHeaders {
+		sc.canonHeader[v] = cv
+	}
 	return cv
 }
 
@@ -866,6 +870,15 @@ func (sc *serverConn) serve() {
 		case res := <-sc.wroteFrameCh:
 			sc.wroteFrame(res)
 		case res := <-sc.readFrameCh:
+			// Process any written frames before reading new frames from the client since a
+			// written frame could have triggered a new stream to be started.
+			if sc.writingFrameAsync {
+				select {
+				case wroteRes := <-sc.wroteFrameCh:
+					sc.wroteFrame(wroteRes)
+				default:
+				}
+			}
 			if !sc.processFrameFromReader(res) {
 				return
 			}
@@ -1293,7 +1306,9 @@ func (sc *serverConn) startGracefulShutdown() {
 	sc.shutdownOnce.Do(func() { sc.sendServeMsg(gracefulShutdownMsg) })
 }
 
-// After sending GOAWAY, the connection will close after goAwayTimeout.
+// After sending GOAWAY with an error code (non-graceful shutdown), the
+// connection will close after goAwayTimeout.
+//
 // If we close the connection immediately after sending GOAWAY, there may
 // be unsent data in our kernel receive buffer, which will cause the kernel
 // to send a TCP RST on close() instead of a FIN. This RST will abort the
@@ -1629,23 +1644,37 @@ func (sc *serverConn) processSettingInitialWindowSize(val uint32) error {
 
 func (sc *serverConn) processData(f *DataFrame) error {
 	sc.serveG.check()
-	if sc.inGoAway && sc.goAwayCode != ErrCodeNo {
+	id := f.Header().StreamID
+	if sc.inGoAway && (sc.goAwayCode != ErrCodeNo || id > sc.maxClientStreamID) {
+		// Discard all DATA frames if the GOAWAY is due to an
+		// error, or:
+		//
+		// Section 6.8: After sending a GOAWAY frame, the sender
+		// can discard frames for streams initiated by the
+		// receiver with identifiers higher than the identified
+		// last stream.
 		return nil
 	}
-	data := f.Data()
 
-	// "If a DATA frame is received whose stream is not in "open"
-	// or "half closed (local)" state, the recipient MUST respond
-	// with a stream error (Section 5.4.2) of type STREAM_CLOSED."
-	id := f.Header().StreamID
+	data := f.Data()
 	state, st := sc.state(id)
 	if id == 0 || state == stateIdle {
+		// Section 6.1: "DATA frames MUST be associated with a
+		// stream. If a DATA frame is received whose stream
+		// identifier field is 0x0, the recipient MUST respond
+		// with a connection error (Section 5.4.1) of type
+		// PROTOCOL_ERROR."
+		//
 		// Section 5.1: "Receiving any frame other than HEADERS
 		// or PRIORITY on a stream in this state MUST be
 		// treated as a connection error (Section 5.4.1) of
 		// type PROTOCOL_ERROR."
 		return ConnectionError(ErrCodeProtocol)
 	}
+
+	// "If a DATA frame is received whose stream is not in "open"
+	// or "half closed (local)" state, the recipient MUST respond
+	// with a stream error (Section 5.4.2) of type STREAM_CLOSED."
 	if st == nil || state != stateOpen || st.gotTrailerHeader || st.resetQueued {
 		// This includes sending a RST_STREAM if the stream is
 		// in stateHalfClosedLocal (which currently means that
@@ -2021,7 +2050,11 @@ func (sc *serverConn) newWriterAndRequest(st *stream, f *MetaHeadersFrame) (*res
 	}
 	if bodyOpen {
 		if vv, ok := rp.header["Content-Length"]; ok {
-			req.ContentLength, _ = strconv.ParseInt(vv[0], 10, 64)
+			if cl, err := strconv.ParseUint(vv[0], 10, 63); err == nil {
+				req.ContentLength = int64(cl)
+			} else {
+				req.ContentLength = 0
+			}
 		} else {
 			req.ContentLength = -1
 		}
@@ -2404,9 +2437,8 @@ func (rws *responseWriterState) writeChunk(p []byte) (n int, err error) {
 		var ctype, clen string
 		if clen = rws.snapHeader.Get("Content-Length"); clen != "" {
 			rws.snapHeader.Del("Content-Length")
-			clen64, err := strconv.ParseInt(clen, 10, 64)
-			if err == nil && clen64 >= 0 {
-				rws.sentContentLen = clen64
+			if cl, err := strconv.ParseUint(clen, 10, 63); err == nil {
+				rws.sentContentLen = int64(cl)
 			} else {
 				clen = ""
 			}
@@ -2770,8 +2802,12 @@ func (w *responseWriter) Push(target string, opts *http.PushOptions) error {
 		// but PUSH_PROMISE requests cannot have a body.
 		// http://tools.ietf.org/html/rfc7540#section-8.2
 		// Also disallow Host, since the promised URL must be absolute.
-		switch strings.ToLower(k) {
-		case "content-length", "content-encoding", "trailer", "te", "expect", "host":
+		if asciiEqualFold(k, "content-length") ||
+			asciiEqualFold(k, "content-encoding") ||
+			asciiEqualFold(k, "trailer") ||
+			asciiEqualFold(k, "te") ||
+			asciiEqualFold(k, "expect") ||
+			asciiEqualFold(k, "host") {
 			return fmt.Errorf("promised request headers cannot include %q", k)
 		}
 	}
